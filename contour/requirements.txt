@@ -1,0 +1,5 @@
+# contour tool dependencies
+# Install on Windows:  pip install -r requirements.txt
+numpy
+scipy
+pywin32  # Windows only; provides the AutoCAD COM bridge
