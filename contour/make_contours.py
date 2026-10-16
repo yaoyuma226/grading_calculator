@@ -23,6 +23,8 @@ def main(argv=None):
                     help="contour interval, same unit as elevations (e.g. 1 for 1'-0\")")
     ap.add_argument("--major-every", type=int, default=5,
                     help="every Nth contour is a major contour (default 5)")
+    ap.add_argument("--smooth-iters", type=int, default=2,
+                    help="Chaikin smoothing iterations (default 2); 0 disables smoothing")
     args = ap.parse_args(argv)
 
     acad = connect()
@@ -38,7 +40,8 @@ def main(argv=None):
         return 1
     print(f"Read {len(points)} spot elevations.")
 
-    results = generate_contours(points, args.interval, args.major_every)
+    results = generate_contours(points, args.interval, args.major_every,
+                                smooth_iters=args.smooth_iters)
     n_levels = len(results)
     n_minor, n_major = draw_contours(doc, results)
     print(f"Drew {n_minor} minor + {n_major} major contour polylines "

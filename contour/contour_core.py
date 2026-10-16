@@ -35,6 +35,66 @@ class ContourResult:
     polylines: list  # list of [(x, y), ...]
 
 
+# ---------------------------------------------------------------------------
+# Smoothing
+# ---------------------------------------------------------------------------
+# TIN contours are piecewise-linear segments per triangle edge, which looks
+# angular ("折") on smooth terrain. We apply Chaikin corner-cutting, the
+# standard cheap smoother for this: it repeatedly replaces each corner with
+# two points at 1/4 and 3/4 along the adjacent edges. It stays inside the
+# convex hull of the original polyline, so the smoothed contour never drifts
+# far from the true interpolated level (well under one segment length), and
+# open polylines keep their original endpoints.
+
+def _is_closed(line) -> bool:
+    """A chained closed loop carries its start point again as the last point."""
+    return (len(line) > 1
+            and math.hypot(line[0][0] - line[-1][0],
+                           line[0][1] - line[-1][1]) < 1e-9)
+
+
+def _chaikin_once(points, closed: bool):
+    """One Chaikin iteration. ``points`` must not repeat the start point."""
+    n = len(points)
+    out = []
+    if closed:
+        for i in range(n):
+            px, py = points[i]
+            qx, qy = points[(i + 1) % n]
+            out.append((0.75 * px + 0.25 * qx, 0.75 * py + 0.25 * qy))
+            out.append((0.25 * px + 0.75 * qx, 0.25 * py + 0.75 * qy))
+    else:
+        out.append(points[0])
+        for i in range(n - 1):
+            px, py = points[i]
+            qx, qy = points[i + 1]
+            out.append((0.75 * px + 0.25 * qx, 0.75 * py + 0.25 * qy))
+            out.append((0.25 * px + 0.75 * qx, 0.25 * py + 0.75 * qy))
+        out.append(points[-1])
+    return out
+
+
+def smooth_polyline(line, iterations: int = 2):
+    """Return a Chaikin-smoothed copy of a chained contour polyline.
+
+    Open lines keep their endpoints; closed loops stay closed. Lines with
+    fewer than 3 distinct points are returned unchanged. ``iterations``
+    of 2 is the default sweet spot: visibly smooth without drifting from
+    the true contour level.
+    """
+    if iterations <= 0:
+        return list(line)
+    closed = _is_closed(line)
+    pts = list(line[:-1]) if closed else list(line)
+    if len(pts) < 3:
+        return list(line)
+    for _ in range(iterations):
+        pts = _chaikin_once(pts, closed)
+    if closed:
+        pts.append(pts[0])
+    return pts
+
+
 def _crossing(za: float, zb: float, level: float):
     """Return the interpolation factor t in [0, 1] where the edge
     (za -> zb) crosses ``level``, or None if it does not cross.
@@ -202,13 +262,16 @@ def contour_levels(zmin: float, zmax: float, interval: float):
     return levels
 
 
-def generate_contours(points, interval: float, major_every: int = 5):
+def generate_contours(points, interval: float, major_every: int = 5,
+                      smooth_iters: int = 2):
     """Generate contours from spot elevations.
 
     Args:
         points: iterable of (x, y, z) spot elevations.
         interval: contour interval in the same unit as z.
         major_every: every Nth contour is flagged major (default 5).
+        smooth_iters: Chaikin smoothing iterations applied to each
+            polyline (default 2); 0 disables smoothing.
 
     Returns:
         list[ContourResult], one per level that has geometry.
@@ -227,6 +290,8 @@ def generate_contours(points, interval: float, major_every: int = 5):
         if not segments:
             continue
         polylines = _chain_segments(segments)
+        if smooth_iters > 0:
+            polylines = [smooth_polyline(line, smooth_iters) for line in polylines]
         # index of this level among multiples of interval, for major flag
         idx = int(round(level / interval))
         results.append(ContourResult(

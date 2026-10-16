@@ -6,7 +6,7 @@ A helper for landscape architects: **select spot-elevation texts in AutoCAD → 
 
 1. In AutoCAD, select the `TEXT`/`MTEXT` entities that hold spot elevations (e.g. `102.5`).
 2. Run `contour/make_contours.py --interval 1` (interval in the same unit as the elevations, e.g. feet).
-3. The script builds a Delaunay triangulated irregular network (TIN) from the points — the same method Civil 3D uses — linearly interpolates each contour level across every triangle edge, chains the crossings into polylines, and draws them as `LWPOLYLINE`s on layers `C-TOPO-MINR` (minor) and `C-TOPO-MAJR` (major, every 5th level by default, drawn wider).
+3. The script builds a Delaunay triangulated irregular network (TIN) from the points — the same method Civil 3D uses — linearly interpolates each contour level across every triangle edge, chains the crossings into polylines, applies Chaikin smoothing (2 iterations by default, so lines look hand-drawn-smooth while staying within a fraction of a segment length of the true level), and draws them as `LWPOLYLINE`s on layers `C-TOPO-MINR` (minor) and `C-TOPO-MAJR` (major, every 5th level by default, drawn wider).
 
 *Demo: run `cd contour && python test_core.py` to regenerate `demo.png` — gray dots are spot elevations, brown lines are the generated contours (bold = major).*
 
@@ -26,6 +26,7 @@ Option A — command line:
 :: 1. Open the drawing in AutoCAD and SELECT the elevation texts (grips show).
 :: 2. Then run:
 python contour\make_contours.py --interval 1 --major-every 5
+:: add --smooth-iters 0 to disable smoothing, --smooth-iters 3 for extra smooth
 ```
 
 Option B — inside AutoCAD as a command:
@@ -34,11 +35,11 @@ Option B — inside AutoCAD as a command:
 2. `APPLOAD` the `.lsp` (or add it to the Startup Suite so it loads every time).
 3. Select elevation texts, type `MAKECONTOURS`, enter the interval.
 
-## Notes & limits (v1)
+## Notes & limits (v1.1)
 
 - Elevations are parsed as the first number in each text (`EL. 102.5` works; non-numeric texts are skipped with a warning).
 - Contours span the convex hull of the points; add boundary spot elevations if the edges look wrong.
-- TIN contours are straight segments per triangle (accurate, slightly angular). Smoothing is on the to-do list.
+- Smoothing is Chaikin corner-cutting (2 iterations default): gentle on curves, keeps endpoints of open contours and closes loops, and never drifts far from the interpolated level. Disable with `--smooth-iters 0` if you want the raw TIN lines.
 - Units are whatever the drawing uses — just keep the interval in the same unit as the elevation numbers.
 
 ## History
